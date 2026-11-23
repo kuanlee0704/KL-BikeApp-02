@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="theme-color" content="#2563eb">
+<title>單車路線規劃</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+:root{--bg:#fff;--fg:#1b1f23;--mut:#6b7280;--card:#fff;--line:#e5e7eb;--pri:#2563eb;--ok:#16a34a;--bad:#dc2626;--sh:0 4px 18px rgba(0,0,0,.2)}
+@media(prefers-color-scheme:dark){:root{--bg:#111827;--fg:#f3f4f6;--mut:#9ca3af;--card:#1f2937;--line:#374151;--pri:#60a5fa;--sh:0 4px 18px rgba(0,0,0,.55)}}
+[hidden]{display:none!important}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:15px/1.45 system-ui,-apple-system,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;color:var(--fg);background:var(--bg);overflow:hidden}
+#map{position:fixed;inset:0}
+button{font:inherit;color:inherit;cursor:pointer}
+input,textarea{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:9px 11px;width:100%;outline:none}
+input:focus,textarea:focus{border-color:var(--pri)}
+.mut{color:var(--mut)} .small{font-size:12.5px}
+
+.topbar{position:fixed;top:max(10px,env(safe-area-inset-top));left:10px;right:64px;z-index:1000}
+.search{display:flex;align-items:center;background:var(--card);border-radius:24px;box-shadow:var(--sh);overflow:hidden}
+.search input{flex:1;border:0;border-radius:0;padding:12px 16px;font-size:16px;background:transparent;min-width:0}
+.search button{border:0;background:transparent;padding:0 14px;font-size:18px;height:44px}
+.results{margin-top:6px;background:var(--card);border-radius:14px;box-shadow:var(--sh);max-height:42vh;overflow:auto}
+.results .item{padding:10px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+.results .item:last-child{border:0}
+.results .item b{display:block}
+.fabs{position:fixed;top:max(10px,env(safe-area-inset-top));right:10px;z-index:1000;display:flex;flex-direction:column;gap:8px}
+.fab{width:44px;height:44px;border-radius:50%;border:0;background:var(--card);box-shadow:var(--sh);font-size:20px}
+
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:1000;background:var(--card);border-radius:18px 18px 0 0;box-shadow:var(--sh);padding:4px 14px calc(12px + env(safe-area-inset-bottom));max-height:78vh;overflow:auto;max-width:640px;margin:0 auto}
+.grab{height:22px;display:flex;justify-content:center;align-items:center;cursor:pointer}
+.grab i{width:42px;height:5px;border-radius:3px;background:var(--line)}
+.stats{display:flex;justify-content:space-around;text-align:center}
+.stats b{display:block;font-size:20px}
+.stats span{font-size:12px;color:var(--mut)}
+.status{text-align:center;font-size:12.5px;color:var(--mut);min-height:18px;margin:4px 0 8px}
+.status.bad{color:var(--bad)}
+.row{display:flex;gap:8px}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:10px 14px;flex:1;text-align:center}
+.btn.primary{background:var(--pri);border-color:var(--pri);color:#fff;font-weight:600}
+.btn.danger{color:var(--bad)}
+.btn.sm{padding:6px 10px;flex:none;font-size:13px}
+.detail{margin-top:12px;display:flex;flex-direction:column;gap:10px}
+.detail label{display:block;font-size:12.5px;color:var(--mut)}
+.detail label input,.detail label textarea{margin-top:3px;color:var(--fg)}
+.pts .pt{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)}
+.pts .pt .t{flex:1;min-width:0}
+.pts .pt .t b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pts .pt .t small{display:block;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pts .pt button{border:0;background:transparent;padding:4px 7px;font-size:16px;color:var(--mut)}
+.badge{width:26px;height:26px;border-radius:50%;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}
+.pin{width:30px;height:30px;border-radius:50%;color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.45)}
+.s{background:#16a34a}.e{background:#dc2626}.v{background:#2563eb}.p{background:#9333ea}
+
+.panel{position:fixed;inset:0;z-index:2000;background:var(--bg);overflow:auto;padding:max(14px,env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom))}
+.panel .in{max-width:640px;margin:0 auto}
+.panel h2{margin:6px 0 12px;display:flex;justify-content:space-between;align-items:center}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
+.card h3{margin:0 0 4px;font-size:16px}
+.modal{position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px}
+.modal .box{background:var(--card);border-radius:20px;padding:22px;max-width:420px;width:100%;box-shadow:var(--sh)}
+.modal h2{margin:0 0 8px}
+.link{border:0;background:transparent;color:var(--mut);text-decoration:underline;width:100%;margin-top:8px;padding:8px}
+.toast{position:fixed;left:50%;bottom:calc(110px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#111827;color:#fff;padding:9px 16px;border-radius:20px;z-index:4000;font-size:14px;max-width:86vw;text-align:center}
+.popup b{display:block}
+.popup .row{margin-top:8px}
+.leaflet-popup-content{margin:12px 14px}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="topbar">
+  <div class="search">
+    <input id="q" type="search" placeholder="搜尋目的地、地址或店名（也可貼座標）" enterkeyhint="search" autocomplete="off">
+    <button id="btnSearch" aria-label="搜尋">🔍</button>
+  </div>
+  <div id="results" class="results" hidden></div>
+</div>
+<div class="fabs">
+  <button class="fab" id="btnLocate" aria-label="我的位置">◎</button>
+  <button class="fab" id="btnPlans" aria-label="我的路線">☰</button>
+</div>
+
+<div class="sheet" id="sheet">
+  <div class="grab" id="grab"><i></i></div>
+  <div class="stats">
+    <div><b id="sDist">—</b><span>距離</span></div>
+    <div><b id="sTime">—</b><span>預估時間</span></div>
+    <div><b id="sPts">0</b><span>路徑點</span></div>
+  </div>
+  <div class="status" id="status">搜尋或點地圖，加入目的地</div>
+  <div class="row">
+    <button class="btn primary" id="btnSave">儲存路線</button>
+    <button class="btn" id="btnNav">Google 導航</button>
+  </div>
+  <div class="detail" id="detail" hidden>
+    <div class="pts" id="ptlist"></div>
+    <div class="row">
+      <button class="btn sm" id="btnHereStart">以目前位置為起點</button>
+      <button class="btn sm" id="btnUndo">移除最後一點</button>
+      <button class="btn sm danger" id="btnClear">全部清除</button>
+    </div>
+    <label>路線名稱<input id="pname" maxlength="60" placeholder="留空會自動命名"></label>
+    <label>預計出發時間<input id="pdepart" type="datetime-local"></label>
+    <label>預估均速（km/h，用來算時間）<input id="pspeed" type="number" min="5" max="60" step="1" inputmode="numeric"></label>
+    <label>備註<textarea id="pnotes" rows="2" placeholder="同行者、補給點…"></textarea></label>
+    <button class="btn" id="btnGpx">匯出 GPX</button>
+  </div>
+</div>
+
+<div class="panel" id="plansPanel" hidden>
+  <div class="in">
+    <h2>我的路線 <button class="btn sm" id="btnClosePlans">關閉</button></h2>
+    <div id="planList"></div>
+    <div class="card">
+      <h3>這台裝置</h3>
+      <label class="small mut">裝置名稱（會記錄在試算表，方便辨認）
+        <input id="setDevName" maxlength="30">
+      </label>
+      <p class="small mut" id="devInfo"></p>
+      <div class="row">
+        <button class="btn sm" id="btnPing">測試後端連線</button>
+        <button class="btn sm" id="btnReask">重新要求定位</button>
+      </div>
+      <p class="small" id="pingResult"></p>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="onboard" hidden>
+  <div class="box">
+    <h2>🚲 單車路線規劃</h2>
+    <p>使用前必須允許取得你的<b>精確位置</b>，會把「目前位置」當作路線起點。</p>
+    <label class="small mut">這台裝置的名稱
+      <input id="devname" maxlength="30" placeholder="例如：我的 iPhone">
+    </label>
+    <p class="small mut">為了辨認是哪一台裝置，下列資料會傳到你自己的 Google 試算表：裝置名稱、瀏覽器／系統資訊、定位授權結果、開啟網頁與規劃路線當下的位置、規劃的起點與終點。</p>
+    <p class="small" id="permHint" style="color:var(--bad)" hidden></p>
+    <button class="btn primary" id="btnAllow" style="width:100%">允許定位並開始</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+(() => {
+'use strict';
+
+/* ================= 設定（部署前請改這裡） ================= */
+const CONFIG = {
+  BACKEND_URL: 'https://script.google.com/macros/s/AKfycbxuy-no5_SEmAd2tXjqjZzFiPiKJ96a-VdngDynxeHEZcbqvRRrdZQWASNkSbG3GjQ/exec',                 // Apps Script 網頁應用程式網址（結尾是 /exec）
+  TOKEN: 'klbikeapp',                       // 要和 Code.gs 裡的 TOKEN 一樣
+  CENTER: [25.04, 121.55],         // 沒有定位時的地圖中心
+  DEFAULT_SPEED_KMH: 15,
+  MAX_POINTS: 25
+};
+
+/* ================= 小工具 ================= */
+const $ = s => document.querySelector(s);
+const ls = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+const uid = () => crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function toast(msg) {
+  const el = document.createElement('div');
+  el.className = 'toast'; el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2600);
+}
+const fmtDist = m => m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(1) + ' km';
+const fmtDur = s => { const m = Math.round(s / 60); return m < 60 ? m + ' 分' : Math.floor(m / 60) + ' 時 ' + (m % 60) + ' 分'; };
+const hav = (a, b) => {
+  const R = 6371000, r = x => x * Math.PI / 180;
+  const dLat = r(b.lat - a.lat), dLon = r(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+};
+const coordText = p => p.lat.toFixed(5) + ', ' + p.lon.toFixed(5);
+const nameOf = p => p.name || coordText(p);
+const fullName = p => nameOf(p) + (p.addr ? '（' + p.addr + '）' : '');
+
+/* ================= 裝置與後端紀錄 ================= */
+const dev = { id: ls.get('bp_dev_id', null), name: ls.get('bp_dev_name', '') };
+if (!dev.id) { dev.id = uid(); ls.set('bp_dev_id', dev.id); }
+let permission = 'unknown';
+let here = null; // {lat, lon, acc}
+
+function guessName() {
+  const u = navigator.userAgent;
+  const os = /iPhone/.test(u) ? 'iPhone' : /iPad/.test(u) ? 'iPad' : /Android/.test(u) ? 'Android' : /Windows/.test(u) ? 'Windows' : /Mac/.test(u) ? 'Mac' : '裝置';
+  const br = /Edg\//.test(u) ? 'Edge' : /Firefox|FxiOS/.test(u) ? 'Firefox' : /CriOS|Chrome/.test(u) ? 'Chrome' : /Safari/.test(u) ? 'Safari' : '';
+  return os + (br ? ' ' + br : '');
+}
+function devPayload() {
+  return {
+    id: dev.id, name: dev.name || guessName(), permission,
+    ua: navigator.userAgent,
+    platform: (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '',
+    lang: navigator.language || '',
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+    screen: screen.width + 'x' + screen.height + '@' + (window.devicePixelRatio || 1),
+    pwa: matchMedia('(display-mode: standalone)').matches
+  };
+}
+const posObj = () => here ? { lat: here.lat, lon: here.lon, acc: here.acc } : null;
+
+// 送不出去的紀錄會先放在本機佇列，下次再補送
+let flushing = false;
+function enqueue(item) {
+  if (!CONFIG.BACKEND_URL) return;
+  const q = ls.get('bp_queue', []);
+  q.push(item);
+  while (q.length > 200) q.shift();
+  ls.set('bp_queue', q);
+  flush();
+}
+async function flush() {
+  if (!CONFIG.BACKEND_URL || flushing) return;
+  flushing = true;
+  try {
+    let q;
+    while ((q = ls.get('bp_queue', [])).length) {
+      // no-cors：Apps Script 不回 CORS 標頭，所以只送不讀回應
+      await fetch(CONFIG.BACKEND_URL, {
+        method: 'POST', mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(q[0])
+      });
+      q = ls.get('bp_queue', []); q.shift(); ls.set('bp_queue', q);
+    }
+  } catch { /* 離線，下次再送 */ }
+  finally { flushing = false; }
+}
+function logEvent(type, detail = {}, pos = posObj()) {
+  enqueue({ token: CONFIG.TOKEN, kind: 'event', ts: new Date().toISOString(), device: devPayload(), type, pos, detail });
+}
+function logPlan(plan, status) {
+  const s = plan.pts[0], e = plan.pts[plan.pts.length - 1];
+  enqueue({
+    token: CONFIG.TOKEN, kind: 'plan', ts: new Date().toISOString(), device: devPayload(), pos: posObj(),
+    plan: {
+      id: plan.id, status, name: plan.name, departAt: plan.departAt || '', notes: plan.notes || '',
+      start: { name: fullName(s), lat: s.lat, lon: s.lon },
+      end: { name: fullName(e), lat: e.lat, lon: e.lon },
+      viaCount: Math.max(0, plan.pts.length - 2),
+      distKm: +(plan.distM / 1000).toFixed(2),
+      durMin: Math.round(plan.distM / (plan.speed / 3.6) / 60),
+      mode: plan.mode,
+      waypoints: plan.pts.map(p => [+p.lat.toFixed(6), +p.lon.toFixed(6), fullName(p)])
+    }
+  });
+}
+
+/* ================= 定位 ================= */
+function getPos() {
+  return new Promise((ok, no) => {
+    if (!navigator.geolocation) return no({ code: 0, message: '瀏覽器不支援定位' });
+    navigator.geolocation.getCurrentPosition(ok, no, { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 });
+  });
+}
+async function readPerm() {
+  try { return (await navigator.permissions.query({ name: 'geolocation' })).state; } catch { return 'unknown'; }
+}
+// kind: first = 第一次詢問；auto = 開啟網頁自動取得；manual = 按 ◎
+async function locate(kind) {
+  const pp = getPos(); pp.catch(() => {});      // 先呼叫，確保在使用者點擊的手勢內跳出授權視窗
+  const before = await readPerm();
+  if (kind === 'first') logEvent('perm_request', { before }, null);
+  try {
+    const p = await pp;
+    here = { lat: p.coords.latitude, lon: p.coords.longitude, acc: Math.round(p.coords.accuracy) };
+    permission = 'granted'; ls.set('bp_located', true);
+    showHere();
+    if (kind === 'first') logEvent('perm_granted');
+    if (kind === 'manual') logEvent('locate');
+    return here;
+  } catch (e) {
+    permission = await readPerm();
+    if (permission === 'unknown' && e.code === 1) permission = 'denied';
+    if (kind === 'first') logEvent('perm_denied', { code: e.code, msg: e.message }, null);
+    if (kind === 'manual') logEvent('locate_fail', { code: e.code, msg: e.message }, null);
+    return null;
+  }
+}
+
+/* ================= 地圖 ================= */
+const map = L.map('map', { zoomControl: false }).setView(CONFIG.CENTER, 12);
+L.tileLayer('https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}', { maxZoom: 19, attribution: '© 內政部國土測繪中心' }).addTo(map);
+const hereLayer = L.layerGroup().addTo(map);
+const routeLayer = L.layerGroup().addTo(map);
+const ptLayer = L.layerGroup().addTo(map);
+const prevLayer = L.layerGroup().addTo(map);
+
+function showHere() {
+  hereLayer.clearLayers();
+  if (!here) return;
+  if (here.acc > 20) L.circle([here.lat, here.lon], { radius: here.acc, color: '#2563eb', weight: 1, fillOpacity: .12 }).addTo(hereLayer);
+  L.circleMarker([here.lat, here.lon], { radius: 8, color: '#fff', weight: 3, fillColor: '#2563eb', fillOpacity: 1 }).addTo(hereLayer);
+}
+const pinIcon = (cls, txt) => L.divIcon({ className: '', html: `<div class="pin ${cls}">${txt}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] });
+
+/* ================= 規劃狀態 ================= */
+let pts = [];            // [{lat, lon, name, addr, here}]
+let route = null;        // {coords, dist, mode, label}
+let planId = uid();
+let speed = ls.get('bp_speed', CONFIG.DEFAULT_SPEED_KMH);
+
+const roleOf = i => i === 0 ? ['s', '起'] : i === pts.length - 1 ? ['e', '終'] : ['v', String(i)];
+
+function renderPts() {
+  ptLayer.clearLayers();
+  pts.forEach((p, i) => {
+    const [cls, txt] = roleOf(i);
+    const m = L.marker([p.lat, p.lon], { icon: pinIcon(cls, txt), draggable: true }).addTo(ptLayer);
+    m.bindTooltip(nameOf(p));
+    m.on('dragend', () => {
+      const ll = m.getLatLng();
+      Object.assign(p, { lat: ll.lat, lon: ll.lng, name: '自訂位置', addr: '', here: false });
+      renderPts(); scheduleRoute(false);
+    });
+  });
+  renderList(); updateSummary();
+}
+function renderList() {
+  $('#ptlist').innerHTML = pts.length ? pts.map((p, i) => {
+    const [cls, txt] = roleOf(i);
+    return `<div class="pt" data-i="${i}">
+      <span class="badge ${cls}">${txt}</span>
+      <div class="t"><b>${esc(nameOf(p))}</b><small>${esc(p.addr || coordText(p))}</small></div>
+      <button data-act="up" ${i === 0 ? 'disabled style="opacity:.3"' : ''}>↑</button>
+      <button data-act="down" ${i === pts.length - 1 ? 'disabled style="opacity:.3"' : ''}>↓</button>
+      <button data-act="del">✕</button></div>`;
+  }).join('') : '<p class="mut small">還沒有路徑點</p>';
+}
+$('#ptlist').addEventListener('click', e => {
+  const b = e.target.closest('button[data-act]'); if (!b || b.disabled) return;
+  const i = +b.closest('.pt').dataset.i, a = b.dataset.act;
+  if (a === 'del') pts.splice(i, 1);
+  else { const j = a === 'up' ? i - 1 : i + 1; [pts[i], pts[j]] = [pts[j], pts[i]]; }
+  renderPts(); scheduleRoute(false);
+});
+
+function curDist() {
+  if (route) return route.dist;
+  let d = 0; for (let i = 1; i < pts.length; i++) d += hav(pts[i - 1], pts[i]); return d;
+}
+function updateSummary() {
+  const ok = pts.length >= 2;
+  $('#sDist').textContent = ok ? fmtDist(curDist()) : '—';
+  $('#sTime').textContent = ok ? fmtDur(curDist() / (speed / 3.6)) : '—';
+  $('#sPts').textContent = pts.length;
+}
+function setStatus(t, bad) { const s = $('#status'); s.textContent = t; s.className = 'status' + (bad ? ' bad' : ''); }
+
+/* ================= 路線規劃（OSM 公開路由服務，不需金鑰） ================= */
+let routeTimer = null, routeSeq = 0, routeCtl = null, logTimer = null, lastLogSig = '';
+
+function scheduleRoute(fit) { clearTimeout(routeTimer); routeTimer = setTimeout(() => computeRoute(fit), 500); }
+
+async function fetchRoute(list, prof, signal) {
+  const c = list.map(p => p.lon.toFixed(6) + ',' + p.lat.toFixed(6)).join(';');
+  const r = await fetch(`https://routing.openstreetmap.de/routed-${prof}/route/v1/driving/${c}?overview=full&geometries=geojson`, { signal });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const j = await r.json();
+  if (j.code !== 'Ok' || !j.routes || !j.routes.length) throw new Error(j.message || j.code || '找不到路線');
+  const rt = j.routes[0];
+  return { coords: rt.geometry.coordinates.map(([x, y]) => [y, x]), dist: rt.distance };
+}
+
+async function computeRoute(fit) {
+  const seq = ++routeSeq;
+  if (routeCtl) routeCtl.abort();
+  routeLayer.clearLayers(); route = null;
+  if (pts.length < 2) { setStatus(pts.length ? '再加入目的地就會規劃路線' : '搜尋或點地圖，加入目的地'); updateSummary(); return; }
+  setStatus('規劃路線中…');
+  routeCtl = new AbortController();
+  let err = '';
+  for (const [prof, label] of [['bike', '腳踏車路線'], ['foot', '步行路徑（此區沒有單車路線資料，僅供參考）']]) {
+    try {
+      const r = await fetchRoute(pts, prof, routeCtl.signal);
+      if (seq !== routeSeq) return;
+      route = { ...r, mode: prof, label }; break;
+    } catch (e) { if (e.name === 'AbortError') return; err = e.message; }
+  }
+  if (seq !== routeSeq) return;
+  if (route) {
+    L.polyline(route.coords, { color: '#2563eb', weight: 6, opacity: .85 }).addTo(routeLayer);
+    setStatus(route.label);
+    if (fit) fitAll();
+    scheduleRouteLog();
+  } else {
+    L.polyline(pts.map(p => [p.lat, p.lon]), { color: '#2563eb', weight: 4, dashArray: '8 8', opacity: .6 }).addTo(routeLayer);
+    setStatus('路線規劃失敗（' + err + '），暫時顯示直線距離', true);
+  }
+  updateSummary();
+}
+function fitAll() {
+  const b = L.latLngBounds(pts.map(p => [p.lat, p.lon]));
+  if (route) route.coords.forEach(c => b.extend(c));
+  map.fitBounds(b, { paddingTopLeft: [30, 80], paddingBottomRight: [30, $('#sheet').offsetHeight + 20], maxZoom: 17 });
+}
+// 路線穩定 4 秒後，記錄「從哪裡規劃去哪裡」
+function scheduleRouteLog() {
+  clearTimeout(logTimer);
+  logTimer = setTimeout(() => {
+    if (!route || pts.length < 2) return;
+    const s = pts[0], e = pts[pts.length - 1];
+    const sig = pts.map(p => p.lat.toFixed(4) + ',' + p.lon.toFixed(4)).join('|');
+    if (sig === lastLogSig) return;
+    lastLogSig = sig;
+    logEvent('route', {
+      start: fullName(s), startLat: s.lat, startLon: s.lon,
+      end: fullName(e), endLat: e.lat, endLon: e.lon,
+      via: pts.length - 2, distKm: +(route.dist / 1000).toFixed(2), mode: route.mode
+    });
+  }, 4000);
+}
+
+/* ================= 搜尋與加點（Nominatim，不需金鑰） ================= */
+async function reverse(lat, lon) {
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&accept-language=zh-TW&lat=${lat}&lon=${lon}`);
+    const j = await r.json();
+    return j.name || (j.display_name || '').split(',').slice(0, 2).join(' ').trim();
+  } catch { return ''; }
+}
+async function search() {
+  const q = $('#q').value.trim(); if (!q) return;
+  const box = $('#results');
+  const m = q.match(/^(-?\d+(?:\.\d+)?)\s*[,，\s]\s*(-?\d+(?:\.\d+)?)$/);
+  if (m) { box.hidden = true; return preview(+m[1], +m[2], '座標位置', '', false); }
+  box.hidden = false; box.innerHTML = '<div class="item mut">搜尋中…</div>';
+  try {
+    const b = map.getBounds();
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&accept-language=zh-TW&q=${encodeURIComponent(q)}&viewbox=${b.getWest()},${b.getNorth()},${b.getEast()},${b.getSouth()}`);
+    const list = await r.json();
+    if (!list.length) { box.innerHTML = '<div class="item mut">找不到相符的地點，試試換個關鍵字，或直接點地圖</div>'; return; }
+    box.innerHTML = '';
+    list.forEach(h => {
+      const nm = h.name || h.display_name.split(',')[0];
+      const el = document.createElement('div'); el.className = 'item';
+      el.innerHTML = `<b>${esc(nm)}</b><span class="small mut">${esc(h.display_name)}</span>`;
+      el.onclick = () => { box.hidden = true; $('#q').blur(); preview(+h.lat, +h.lon, nm, h.display_name, false); };
+      box.appendChild(el);
+    });
+  } catch (e) { box.innerHTML = '<div class="item" style="color:var(--bad)">搜尋失敗：' + esc(e.message) + '</div>'; }
+}
+$('#btnSearch').onclick = search;
+$('#q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); search(); } });
+
+function preview(lat, lon, name, addr, doReverse) {
+  prevLayer.clearLayers();
+  const info = { lat, lon, name, addr };
+  const node = document.createElement('div'); node.className = 'popup';
+  const title = document.createElement('b'), sub = document.createElement('div');
+  sub.className = 'small mut'; sub.style.maxWidth = '220px';
+  const paint = () => { title.textContent = info.name; sub.textContent = info.addr || coordText(info); };
+  paint();
+  node.append(title, sub);
+  const row = document.createElement('div'); row.className = 'row';
+  const bAdd = document.createElement('button'); bAdd.className = 'btn sm primary'; bAdd.textContent = '加入路線';
+  const bStart = document.createElement('button'); bStart.className = 'btn sm'; bStart.textContent = '設為起點';
+  bAdd.onclick = () => { addPoint({ ...info }); prevLayer.clearLayers(); };
+  bStart.onclick = () => { setStart({ ...info }); prevLayer.clearLayers(); };
+  row.append(bAdd, bStart); node.appendChild(row);
+  const mk = L.marker([lat, lon], { icon: pinIcon('p', '?') }).addTo(prevLayer);
+  mk.bindPopup(node, { closeButton: false }).openPopup();
+  map.panTo([lat, lon]);
+  if (doReverse) reverse(lat, lon).then(a => { if (a) { info.name = a; paint(); } });
+}
+map.on('click', e => {
+  $('#results').hidden = true; $('#q').blur();
+  preview(e.latlng.lat, e.latlng.lng, '地圖上的點', '', true);
+});
+
+function addPoint(p) {
+  if (pts.length >= CONFIG.MAX_POINTS) return toast('最多 ' + CONFIG.MAX_POINTS + ' 個路徑點');
+  const first = pts.length === 0;
+  pts.push(p); renderPts(); scheduleRoute(true);
+  toast(first ? '已設為起點，再加入目的地' : '已加入路線');
+}
+function setStart(p) {
+  if (pts.length) pts[0] = p; else pts.push(p);
+  renderPts(); scheduleRoute(true);
+  toast('已設為起點');
+}
+async function useHereAsStart(quiet) {
+  if (!here) return quiet ? null : toast('還沒有取得目前位置');
+  const p = { lat: here.lat, lon: here.lon, name: '目前位置', addr: '', here: true };
+  setStart(p);
+  reverse(p.lat, p.lon).then(a => { if (a && pts[0] === p) { p.addr = a; renderList(); } });
+}
+
+/* ================= 儲存、開啟、匯出 ================= */
+const shortOf = p => p.here ? '目前位置' : nameOf(p).slice(0, 14);
+const autoName = () => pts.length >= 2 ? shortOf(pts[0]) + ' → ' + shortOf(pts[pts.length - 1]) : '未命名路線';
+const plansGet = () => ls.get('bp_plans', []);
+
+function currentPlan() {
+  return {
+    id: planId, name: $('#pname').value.trim() || autoName(),
+    departAt: $('#pdepart').value, notes: $('#pnotes').value.trim(),
+    pts: pts.map(({ lat, lon, name, addr, here }) => ({ lat, lon, name, addr, here })),
+    distM: Math.round(curDist()), mode: route ? route.mode : 'straight', speed, updated: Date.now()
+  };
+}
+$('#btnSave').onclick = () => {
+  if (pts.length < 2) return toast('至少需要起點和終點');
+  const plan = currentPlan();
+  const list = plansGet(), i = list.findIndex(x => x.id === plan.id);
+  if (i >= 0) list[i] = plan; else list.push(plan);
+  ls.set('bp_plans', list);
+  logPlan(plan, 'saved');
+  toast('已儲存「' + plan.name + '」');
+};
+$('#btnNav').onclick = () => {
+  if (pts.length < 2) return toast('至少需要起點和終點');
+  window.open(gmapsUrl(pts), '_blank');
+};
+function gmapsUrl(list) {
+  const o = list[0], d = list[list.length - 1];
+  let mid = list.slice(1, -1);
+  if (mid.length > 9) mid = Array.from({ length: 9 }, (_, i) => mid[Math.round(i * (mid.length - 1) / 8)]);
+  let u = `https://www.google.com/maps/dir/?api=1&travelmode=bicycling&origin=${o.lat},${o.lon}&destination=${d.lat},${d.lon}`;
+  if (mid.length) u += '&waypoints=' + encodeURIComponent(mid.map(p => p.lat + ',' + p.lon).join('|'));
+  return u;
+}
+$('#btnGpx').onclick = () => {
+  if (pts.length < 2) return toast('至少需要起點和終點');
+  const name = esc($('#pname').value.trim() || autoName());
+  const w = pts.map(p => `<wpt lat="${p.lat}" lon="${p.lon}"><name>${esc(nameOf(p))}</name></wpt>`).join('');
+  const line = (route ? route.coords : pts.map(p => [p.lat, p.lon])).map(c => `<rtept lat="${c[0]}" lon="${c[1]}"/>`).join('');
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="BikePlanner" xmlns="http://www.topografix.com/GPX/1/1">${w}<rte><name>${name}</name>${line}</rte></gpx>`;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([gpx], { type: 'application/gpx+xml' }));
+  a.download = (name || 'route') + '.gpx'; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+};
+function newPlan() {
+  planId = uid(); pts = []; route = null; lastLogSig = '';
+  $('#pname').value = ''; $('#pdepart').value = ''; $('#pnotes').value = '';
+  routeLayer.clearLayers(); prevLayer.clearLayers();
+  renderPts(); setStatus('搜尋或點地圖，加入目的地');
+  if (here) useHereAsStart(true);
+}
+$('#btnClear').onclick = () => { if (!pts.length || confirm('清除目前所有路徑點？')) newPlan(); };
+$('#btnUndo').onclick = () => { if (pts.length) { pts.pop(); renderPts(); scheduleRoute(false); } };
+$('#btnHereStart').onclick = () => useHereAsStart(false);
+$('#grab').onclick = () => { const d = $('#detail'); d.hidden = !d.hidden; };
+$('#pspeed').value = speed;
+$('#pspeed').onchange = e => { speed = Math.min(60, Math.max(5, +e.target.value || CONFIG.DEFAULT_SPEED_KMH)); e.target.value = speed; ls.set('bp_speed', speed); updateSummary(); };
+
+/* ================= 我的路線面板 ================= */
+function renderPlans() {
+  const list = plansGet().sort((a, b) => (a.departAt || '9') < (b.departAt || '9') ? -1 : (a.departAt || '9') > (b.departAt || '9') ? 1 : b.updated - a.updated);
+  $('#planList').innerHTML = list.length ? list.map(p => {
+    const s = p.pts[0], e = p.pts[p.pts.length - 1];
+    return `<div class="card" data-id="${p.id}">
+      <h3>${esc(p.name)}</h3>
+      <div class="small" style="color:var(--pri)">${p.departAt ? '出發 ' + esc(p.departAt.replace('T', ' ')) : '未設定出發時間'}</div>
+      <div class="small mut">${fmtDist(p.distM)} · 約 ${fmtDur(p.distM / (p.speed / 3.6))} · ${p.pts.length} 點${p.mode === 'foot' ? ' · 步行路徑' : ''}</div>
+      <div class="small">${esc(nameOf(s))} → ${esc(nameOf(e))}</div>
+      ${p.notes ? `<div class="small mut">${esc(p.notes)}</div>` : ''}
+      <div class="row" style="margin-top:10px">
+        <button class="btn sm primary" data-a="open">開啟</button>
+        <button class="btn sm" data-a="nav">Google 導航</button>
+        <button class="btn sm danger" data-a="del">刪除</button>
+      </div></div>`;
+  }).join('') : '<p class="mut" style="text-align:center;padding:20px">還沒有儲存的路線</p>';
+  $('#setDevName').value = dev.name || guessName();
+  $('#devInfo').textContent = '裝置代碼 ' + dev.id.slice(0, 8) + ' · 定位權限：' + permission + (CONFIG.BACKEND_URL ? '' : ' · ⚠ 尚未設定後端，紀錄只在本機');
+}
+$('#btnPlans').onclick = () => { renderPlans(); $('#plansPanel').hidden = false; };
+$('#btnClosePlans').onclick = () => { $('#plansPanel').hidden = true; };
+$('#planList').addEventListener('click', e => {
+  const b = e.target.closest('button[data-a]'); if (!b) return;
+  const id = b.closest('.card').dataset.id;
+  const list = plansGet(), p = list.find(x => x.id === id); if (!p) return;
+  if (b.dataset.a === 'open') {
+    planId = p.id; pts = p.pts.map(x => ({ ...x })); speed = p.speed || speed; $('#pspeed').value = speed;
+    $('#pname').value = p.name; $('#pdepart').value = p.departAt || ''; $('#pnotes').value = p.notes || '';
+    lastLogSig = ''; prevLayer.clearLayers();
+    $('#plansPanel').hidden = true; renderPts(); computeRoute(true);
+  } else if (b.dataset.a === 'nav') {
+    window.open(gmapsUrl(p.pts), '_blank');
+  } else if (b.dataset.a === 'del' && confirm('刪除「' + p.name + '」？')) {
+    ls.set('bp_plans', list.filter(x => x.id !== id));
+    logPlan(p, 'deleted'); renderPlans();
+  }
+});
+$('#setDevName').onchange = e => {
+  dev.name = e.target.value.trim().slice(0, 30) || guessName(); ls.set('bp_dev_name', dev.name);
+  logEvent('rename', { name: dev.name }); toast('已更新裝置名稱');
+};
+$('#btnPing').onclick = async () => {
+  const out = $('#pingResult');
+  if (!CONFIG.BACKEND_URL) { out.textContent = '還沒設定 BACKEND_URL'; return; }
+  out.textContent = '測試中…';
+  try {
+    const r = await fetch(CONFIG.BACKEND_URL + '?ping=1'); const j = await r.json();
+    out.textContent = j.ok ? '✅ 後端正常（' + j.time + '）' : '後端回應異常';
+    flush();
+  } catch (e) { out.textContent = '❌ 連不上後端：' + e.message + '（確認部署權限是「任何人」）'; }
+};
+$('#btnReask').onclick = async () => {
+  $('#plansPanel').hidden = true;
+  const r = await locate('manual');
+  if (r) { map.setView([r.lat, r.lon], 15); if (!pts.length) useHereAsStart(true); }
+  else toast('沒有取得位置，請到瀏覽器的網站設定允許定位');
+};
+
+/* ================= 目前位置按鈕、開場流程 ================= */
+$('#btnLocate').onclick = async () => {
+  const r = await locate('manual');
+  if (r) { map.setView([r.lat, r.lon], Math.max(map.getZoom(), 15)); if (!pts.length) useHereAsStart(true); }
+  else toast('無法取得位置，請檢查瀏覽器的定位權限');
+};
+
+async function afterLocate() {
+  if (here) {
+    map.setView([here.lat, here.lon], 15);
+    if (!pts.length) useHereAsStart(true);
+  }
+}
+async function finishBoot(kind) {
+  await locate(kind);
+  logEvent('open');
+  await afterLocate();
+  flush();
+}
+
+function showOnboard() {
+  $('#devname').value = dev.name || guessName();
+  if (permission === 'denied') {
+    showPermHint('定位被封鎖了，必須允許才能使用。請點網址列左邊的圖示 → 網站設定 → 位置 → 允許，再重新整理頁面。');
+  }
+  $('#onboard').hidden = false;
+}
+function saveDevName() { dev.name = $('#devname').value.trim().slice(0, 30) || guessName(); ls.set('bp_dev_name', dev.name); }
+function showPermHint(msg) { const h = $('#permHint'); h.hidden = false; h.textContent = msg; }
+$('#btnAllow').onclick = async () => {
+  saveDevName();
+  await locate('first');
+  if (!here) {
+    permission = await readPerm();
+    showPermHint(permission === 'denied'
+      ? '定位被封鎖了，必須允許才能使用。請點網址列左邊的圖示 → 網站設定 → 位置 → 允許（iPhone：設定 → 隱私權 → 定位服務 → Safari → 開啟「精確位置」），再重新整理頁面。'
+      : '沒有取得位置，請確認已開啟手機的定位功能，並在跳出的視窗按「允許」，再按一次下方按鈕。');
+    return;
+  }
+  $('#onboard').hidden = true;
+  logEvent('open');
+  await afterLocate();
+  flush();
+};
+
+(async function boot() {
+  renderPts();
+  flush();
+  permission = await readPerm();
+  const ready = dev.name && (permission === 'granted' || (permission === 'unknown' && ls.get('bp_located', false)));
+  if (ready) { await finishBoot('auto'); if (!here) showOnboard(); } else showOnboard();
+})();
+})();
+</script>
+</body>
+</html>
